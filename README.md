@@ -1,19 +1,13 @@
-# Kindle Sokoban — Prototype v2
+# Kindle Sokoban — Approved Visual Test v3
 
-Single-level functional prototype for Kindle Paperwhite.
+This build deliberately discards the generated placeholder assets from the previous prototype.
 
-Included:
-- 3 floor variants
-- 6 wall variants
-- high-angle visual style
-- dark oversized pallets and smaller subtly rotated cargo crates
-- fish, coffee and fruit cargo matching
-- 4-direction player sprites with alternating walk frames
-- tap-to-walk shortest path
-- push mechanics and move counter
-- obstacles/decorative props
-- closed / half-open / open exit door
-- automatic exit sequence when every crate is on its matching pallet
-- Undo and Reset
+Changes:
+- graphics are cropped/derived only from the approved visual reference sheets;
+- floor tiles are real one-cell paving crops so the gameplay grid remains visibly legible;
+- boundary walls are orientation-aware (top/bottom/left/right/corners), not one repeated generic wall tile;
+- crates, targets, player and props come from the approved grayscale visual reference;
+- the approved wooden door sequence is used for the exit;
+- mechanics remain tap-to-walk, push, matching cargo targets, Undo, Reset and automatic exit.
 
-Open `index.html` through GitHub Pages. Keep the `assets` folder beside it.
+This is still a visual validation build, not the final production sprite atlas.

@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Kindle Sokoban Approved Visual Test</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%;overflow:hidden}
+body{padding:4px 5px}
+#top{height:44px;white-space:nowrap;display:flex;align-items:center;gap:4px}
+#title{font-size:25px;font-weight:900;letter-spacing:-1px;margin-right:3px}
+button{height:36px;border:2px solid #111;background:#fff;color:#111;border-radius:0;font-weight:900;font-size:14px;padding:0 9px;-webkit-appearance:none}
+#level{font-size:16px;font-weight:900;min-width:26px;text-align:center}
+#moves{font-size:14px;font-weight:900;min-width:72px;text-align:center}
+#boardWrap{width:100%;height:calc(100vh - 52px);display:flex;align-items:flex-start;justify-content:center;overflow:hidden}
+#board{position:relative;background:#fff}
+.cell{position:absolute;overflow:visible}
+.cell img{position:absolute;left:0;top:0;width:100%;height:100%;display:block;pointer-events:none}
+.floor{z-index:1}.target{z-index:2}.object{z-index:3}.actor{z-index:4}.wall{z-index:6}
+#message{display:none;position:absolute;z-index:50;background:#fff;border:3px solid #111;padding:14px 18px;text-align:center;font-weight:900;font-size:18px;min-width:210px}
+#message small{display:block;font-size:14px;margin-top:7px;font-weight:700}
+</style>
+</head>
+<body>
+<div id="top">
+ <span id="title">SOKOBAN</span>
+ <span id="level">11</span>
+ <span id="moves">Moves 0</span>
+ <button id="undo">Undo</button>
+ <button id="reset">Reset</button>
+</div>
+<div id="boardWrap"><div id="board"></div></div>
+<div id="message"></div>
+<script>
+(function(){
+var A="assets/";
+var rows=8, cols=9;
+
+// One deliberately simple test level.
+// Boundary walls are now orientation-aware; the floor grid is a true one-cell paving tile.
+var targetTypes={"2,2":"fish","2,4":"coffee","2,6":"fruit"};
+var boxTypes={"4,2":"fish","4,4":"coffee","4,6":"fruit"};
+var player={r:6,c:4,dir:"U"};
+var obstacles={"1,1":"barrel","1,7":"rope","5,7":"cart"};
+var moves=0, history=[], walking=false, stepPhase=0, door="closed", finished=false;
+
+var board=document.getElementById("board"), msg=document.getElementById("message");
+
+function K(r,c){return r+","+c}
+function boundary(r,c){return r===0||c===0||r===rows-1||c===cols-1}
+function doorCell(r,c){return r===0&&c===7}
+function boxAt(r,c){return boxTypes[K(r,c)]||null}
+function targetAt(r,c){return targetTypes[K(r,c)]||null}
+function obstacleAt(r,c){return obstacles[K(r,c)]||null}
+function free(r,c){
+ return r>0&&c>0&&r<rows-1&&c<cols-1&&!boxAt(r,c)&&!obstacleAt(r,c);
+}
+function floorVariant(r,c){return ((r*5+c*3)%3)+1}
+
+function wallAsset(r,c){
+ if(r===0&&c===0)return"wall_tl.png";
+ if(r===0&&c===cols-1)return"wall_tr.png";
+ if(r===rows-1&&c===0)return"wall_bl.png";
+ if(r===rows-1&&c===cols-1)return"wall_br.png";
+ if(r===0)return"wall_top_"+(((c-1)%3)+1)+".png";
+ if(r===rows-1)return"wall_bottom_"+(((c-1)%3)+1)+".png";
+ if(c===0)return"wall_left_"+(((r-1)%3)+1)+".png";
+ return"wall_right_"+(((r-1)%3)+1)+".png";
+}
+function image(src,cls){
+ var im=document.createElement("img");im.src=A+src;im.className=cls||"";return im;
+}
+function cellSize(){
+ var ww=window.innerWidth||636,wh=window.innerHeight||740;
+ var max=Math.floor(Math.min((ww-10)/cols,(wh-54)/rows));
+ var allowed=[96,88,80,72,64,56,48],i;
+ for(i=0;i<allowed.length;i++)if(allowed[i]<=max)return allowed[i];
+ return Math.max(42,max);
+}
+function render(){
+ var s=cellSize();
+ board.style.width=(cols*s)+"px";board.style.height=(rows*s)+"px";board.innerHTML="";
+ for(var r=0;r<rows;r++)for(var c=0;c<cols;c++){
+  var el=document.createElement("div");el.className="cell";
+  el.style.width=s+"px";el.style.height=s+"px";el.style.left=(c*s)+"px";el.style.top=(r*s)+"px";
+
+  if(doorCell(r,c)){
+   el.appendChild(image("door_"+door+".png","wall"));
+  }else if(boundary(r,c)){
+   el.appendChild(image(wallAsset(r,c),"wall"));
+  }else{
+   el.appendChild(image("floor_"+floorVariant(r,c)+".png","floor"));
+   var tt=targetAt(r,c);
+   if(tt)el.appendChild(image("target_"+tt+".png","target"));
+   var ob=obstacleAt(r,c);
+   if(ob)el.appendChild(image("obstacle_"+ob+".png","object"));
+   var bt=boxAt(r,c);
+   if(bt)el.appendChild(image("crate_"+bt+".png","object"));
+   if(player.r===r&&player.c===c){
+    var state=walking?"walk":"idle";
+    el.appendChild(image("player_"+player.dir+"_"+state+".png","actor"));
+   }
+  }
+  (function(rr,cc){el.onclick=function(){tap(rr,cc)}})(r,c);
+  board.appendChild(el);
+ }
+ document.getElementById("moves").innerHTML="Moves "+moves;
+}
+function cloneBoxes(){var b={};for(var k in boxTypes)b[k]=boxTypes[k];return b}
+function snapshot(){history.push({p:{r:player.r,c:player.c,dir:player.dir},b:cloneBoxes(),m:moves,d:door})}
+function restore(s){player=s.p;boxTypes=s.b;moves=s.m;door=s.d;finished=false;walking=false;render()}
+function direction(dr,dc){if(dr<0)return"U";if(dr>0)return"D";if(dc<0)return"L";return"R"}
+function allCorrect(){for(var k in targetTypes)if(boxTypes[k]!==targetTypes[k])return false;return true}
+function moveOne(dr,dc,push){
+ if(finished)return false;
+ var nr=player.r+dr,nc=player.c+dc,bt=boxAt(nr,nc);player.dir=direction(dr,dc);
+ if(bt){
+  if(!push)return false;
+  var br=nr+dr,bc=nc+dc;if(!free(br,bc))return false;
+  snapshot();delete boxTypes[K(nr,nc)];boxTypes[K(br,bc)]=bt;player.r=nr;player.c=nc;moves++;stepPhase++;render();
+  if(allCorrect())complete();
+  return true;
+ }
+ if(!free(nr,nc))return false;
+ snapshot();player.r=nr;player.c=nc;moves++;stepPhase++;render();return true;
+}
+function bfs(sr,sc,tr,tc){
+ var q=[[sr,sc]],h=0,seen={},prev={},D=[[-1,0],[1,0],[0,-1],[0,1]];seen[K(sr,sc)]=1;
+ while(h<q.length){
+  var p=q[h++],r=p[0],c=p[1];if(r===tr&&c===tc)break;
+  for(var i=0;i<4;i++){
+   var nr=r+D[i][0],nc=c+D[i][1],kk=K(nr,nc);
+   if(free(nr,nc)&&!seen[kk]){seen[kk]=1;prev[kk]=[r,c];q.push([nr,nc])}
+  }
+ }
+ if(!seen[K(tr,tc)])return null;
+ var path=[],cr=tr,cc=tc;
+ while(cr!==sr||cc!==sc){path.push([cr,cc]);var pp=prev[K(cr,cc)];if(!pp)return null;cr=pp[0];cc=pp[1]}
+ path.reverse();return path;
+}
+function walk(path,done){
+ if(!path||!path.length){if(done)done();return}
+ walking=true;var i=0;
+ function step(){
+  if(i>=path.length){walking=false;render();if(done)done();return}
+  var rr=path[i][0],cc=path[i][1],dr=rr-player.r,dc=cc-player.c;
+  snapshot();player.dir=direction(dr,dc);player.r=rr;player.c=cc;moves++;stepPhase++;render();i++;
+  setTimeout(step,120);
+ }
+ step();
+}
+function tap(r,c){
+ if(walking||finished||boundary(r,c)||doorCell(r,c))return;
+ var bt=boxAt(r,c);
+ if(bt){
+  var dr=r-player.r,dc=c-player.c;
+  if(Math.abs(dr)+Math.abs(dc)===1)moveOne(dr,dc,true);
+  return;
+ }
+ if(obstacleAt(r,c))return;
+ var p=bfs(player.r,player.c,r,c);if(p)walk(p);
+}
+function complete(){
+ finished=true;walking=true;
+ setTimeout(function(){door="half";render()},180);
+ setTimeout(function(){door="open";render()},520);
+ setTimeout(function(){
+  finished=false;
+  var p=bfs(player.r,player.c,1,7);
+  if(!p){walking=false;finished=true;showDone();return}
+  walk(p,function(){
+   walking=true;player.dir="U";render();
+   setTimeout(function(){player.r=0;player.c=7;render()},130);
+   setTimeout(function(){player.r=-1;walking=false;finished=true;render();showDone()},320);
+  });
+ },760);
+}
+function showDone(){
+ msg.innerHTML="LEVEL COMPLETE<small>"+moves+" moves</small>";
+ msg.style.display="block";
+ var b=board.getBoundingClientRect();
+ msg.style.left=Math.round(b.left+b.width/2-msg.offsetWidth/2)+"px";
+ msg.style.top=Math.round(b.top+b.height/2-msg.offsetHeight/2+12)+"px";
+}
+document.getElementById("undo").onclick=function(){if(walking||!history.length)return;restore(history.pop())};
+document.getElementById("reset").onclick=function(){location.reload()};
+window.onresize=render;
+render();
+})();
+</script>
+</body>
+</html>
